@@ -1,0 +1,22 @@
+[
+  {"code":"AAL","name":"American Airlines","riskScore":6},
+  {"code":"AS","name":"Alaska Airlines","riskScore":3},
+  {"code":"DL","name":"Delta Air Lines","riskScore":3},
+  {"code":"F9","name":"Frontier Airlines","riskScore":9},
+  {"code":"NK","name":"Spirit Airlines","riskScore":10},
+  {"code":"SWA","name":"Southwest Airlines","riskScore":4},
+  {"code":"UA","name":"United Airlines","riskScore":5},
+  {"code":"B6","name":"JetBlue Airways","riskScore":5},
+  {"code":"OO","name":"SkyWest Airlines","riskScore":5},
+  {"code":"MQ","name":"Envoy Air","riskScore":4},
+  {"code":"OH","name":"Piedmont Airlines","riskScore":5},
+  {"code":"YX","name":"Mesa Airlines","riskScore":6},
+  {"code":"G4","name":"Allegiant Air","riskScore":5},
+  {"code":"SY","name":"Sun Country Airlines","riskScore":7},
+  {"code":"9E","name":"Endeavor Air","riskScore":4},
+  {"code":"9K","name":"Surf Air","riskScore":5},
+  {"code":"HA","name":"Hawaiian Airlines","riskScore":3},
+  {"code":"TP","name":"Trans States Airlines","riskScore":5},
+  {"code":"CP","name":"Compass Airlines","riskScore":5},
+  {"code":"FX","name":"ExpressJet Airlines","riskScore":4}
+]

@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Cancellation Predictor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background-color 0.8s ease;
+  background-color: #e8e8e8;
+  padding: 20px;
+}
+#background-layer {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: -1; transition: background-color 0.8s ease;
+}
+.container {
+  background: rgba(255,255,255,0.92);
+  border-radius: 16px; padding: 40px;
+  max-width: 560px; width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+h1 { text-align: center; margin-bottom: 8px; color: #222; font-size: 1.6rem; }
+.subtitle { text-align: center; color: #666; font-size: 0.85rem; margin-bottom: 28px; }
+.form-group { margin-bottom: 18px; position: relative; }
+label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 0.9rem; }
+input, select {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid #ccc; border-radius: 8px;
+  font-size: 0.95rem; transition: border-color 0.2s;
+}
+input:focus, select:focus {
+  outline: none; border-color: #4a90d9;
+  box-shadow: 0 0 0 3px rgba(74,144,217,0.15);
+}
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+button {
+  width: 100%; padding: 14px; background: #4a90d9; color: #fff;
+  border: none; border-radius: 8px; font-size: 1.05rem;
+  font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 8px;
+}
+button:hover { background: #3a7bc8; }
+button:disabled { background: #aaa; cursor: not-allowed; }
+.result { margin-top: 24px; text-align: center; display: none; }
+.result.visible { display: block; }
+.percentage { font-size: 3rem; font-weight: 700; margin: 10px 0; }
+.status-text { font-size: 1.15rem; font-weight: 600; margin-bottom: 6px; }
+.detail-bar {
+  margin-top: 20px; text-align: left;
+  background: rgba(0,0,0,0.04); border-radius: 10px; padding: 16px;
+}
+.detail-row {
+  display: flex; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.88rem;
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label { color: #555; }
+.detail-value { font-weight: 600; color: #222; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.result.visible { animation: fadeIn 0.5s ease; }
+.loading { text-align: center; margin-top: 16px; display: none; }
+.loading.visible { display: block; }
+.spinner {
+  display: inline-block; width: 20px; height: 20px;
+  border: 3px solid rgba(74,144,217,0.2); border-top-color: #4a90d9;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.autocomplete-container { position: relative; }
+.autocomplete-list {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: #fff; border: 1px solid #ccc; border-top: none;
+  border-radius: 0 0 8px 8px; max-height: 220px; overflow-y: auto;
+  z-index: 100; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.autocomplete-list.visible { display: block; }
+.autocomplete-item {
+  padding: 10px 14px; cursor: pointer; font-size: 0.88rem;
+  border-bottom: 1px solid #f0f0f0; display: flex; align-items: baseline; gap: 8px;
+}
+.autocomplete-item:last-child { border-bottom: none; }
+.autocomplete-item:hover { background: #f0f7ff; }
+.autocomplete-item .ac-code { font-weight: 700; color: #4a90d9; white-space: nowrap; font-size: 0.92rem; }
+.autocomplete-item .ac-details { color: #444; font-size: 0.85rem; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div id="background-layer"></div>
+<div class="container">
+  <h1>Flight Cancellation Predictor</h1>
+  <p class="subtitle">Enter flight details — weather is auto-detected from airport data</p>
+
+  <div class="form-group autocomplete-container">
+    <label for="airlineInput">Airline (type to search)</label>
+    <input type="text" id="airlineInput" placeholder="e.g. Delta, American, United" autocomplete="off" autofocus>
+    <div class="autocomplete-list" id="airlineList"></div>
+  </div>
+
+  <div class="form-group autocomplete-container">
+    <label for="depAirportInput">Departure Airport (type to search)</label>
+    <input type="text" id="depAirportInput" placeholder="e.g. ATL - Atlanta, LAX - Los Angeles" autocomplete="off">
+    <div class="autocomplete-list" id="depAirportList"></div>
+  </div>
+
+  <div class="form-group autocomplete-container">
+    <label for="arrAirportInput">Arrival Airport (type to search)</label>
+    <input type="text" id="arrAirportInput" placeholder="e.g. JFK - New York, SFO - San Francisco" autocomplete="off">
+    <div class="autocomplete-list" id="arrAirportList"></div>
+  </div>
+
+  <div class="form-group">
+    <label for="departureTime">Departure Time</label>
+    <select id="departureTime">
+      <option value="">-- Select Time --</option>
+      <option value="0">12:00 AM</option>
+      <option value="15">12:15 AM</option>
+      <option value="30">12:30 AM</option>
+      <option value="45">12:45 AM</option>
+      <option value="60">1:00 AM</option>
+      <option value="75">1:15 AM</option>
+      <option value="90">1:30 AM</option>
+      <option value="105">1:45 AM</option>
+      <option value="120">2:00 AM</option>
+      <option value="135">2:15 AM</option>
+      <option value="150">2:30 AM</option>
+      <option value="165">2:45 AM</option>
+      <option value="180">3:00 AM</option>
+      <option value="195">3:15 AM</option>
+      <option value="210">3:30 AM</option>
+      <option value="225">3:45 AM</option>
+      <option value="240">4:00 AM</option>
+      <option value="255">4:15 AM</option>
+      <option value="270">4:30 AM</option>
+      <option value="285">4:45 AM</option>
+      <option value="300">5:00 AM</option>
+      <option value="315">5:15 AM</option>
+      <option value="330">5:30 AM</option>
+      <option value="345">5:45 AM</option>
+      <option value="360">6:00 AM</option>
+      <option value="375">6:15 AM</option>
+      <option value="390">6:30 AM</option>
+      <option value="405">6:45 AM</option>
+      <option value="420">7:00 AM</option>
+      <option value="435">7:15 AM</option>
+      <option value="450">7:30 AM</option>
+      <option value="465">7:45 AM</option>
+      <option value="480">8:00 AM</option>
+      <option value="495">8:15 AM</option>
+      <option value="510">8:30 AM</option>
+      <option value="525">8:45 AM</option>
+      <option value="540">9:00 AM</option>
+      <option value="555">9:15 AM</option>
+      <option value="570">9:30 AM</option>
+      <option value="585">9:45 AM</option>
+      <option value="600">10:00 AM</option>
+      <option value="615">10:15 AM</option>
+      <option value="630">10:30 AM</option>
+      <option value="645">10:45 AM</option>
+      <option value="660">11:00 AM</option>
+      <option value="675">11:15 AM</option>
+      <option value="690">11:30 AM</option>
+      <option value="705">11:45 AM</option>
+      <option value="720">12:00 PM</option>
+      <option value="735">12:15 PM</option>
+      <option value="750">12:30 PM</option>
+      <option value="765">12:45 PM</option>
+      <option value="780">1:00 PM</option>
+      <option value="795">1:15 PM</option>
+      <option value="810">1:30 PM</option>
+      <option value="825">1:45 PM</option>
+      <option value="840">2:00 PM</option>
+      <option value="855">2:15 PM</option>
+      <option value="870">2:30 PM</option>
+      <option value="885">2:45 PM</option>
+      <option value="900">3:00 PM</option>
+      <option value="915">3:15 PM</option>
+      <option value="930">3:30 PM</option>
+      <option value="945">3:45 PM</option>
+      <option value="960">4:00 PM</option>
+      <option value="975">4:15 PM</option>
+      <option value="990">4:30 PM</option>
+      <option value="1005">4:45 PM</option>
+      <option value="1020">5:00 PM</option>
+      <option value="1035">5:15 PM</option>
+      <option value="1050">5:30 PM</option>
+      <option value="1065">5:45 PM</option>
+      <option value="1080">6:00 PM</option>
+      <option value="1095">6:15 PM</option>
+      <option value="1110">6:30 PM</option>
+      <option value="1125">6:45 PM</option>
+      <option value="1140">7:00 PM</option>
+      <option value="1155">7:15 PM</option>
+      <option value="1170">7:30 PM</option>
+      <option value="1185">7:45 PM</option>
+      <option value="1200">8:00 PM</option>
+      <option value="1215">8:15 PM</option>
+      <option value="1230">8:30 PM</option>
+      <option value="1245">8:45 PM</option>
+      <option value="1260">9:00 PM</option>
+      <option value="1275">9:15 PM</option>
+      <option value="1290">9:30 PM</option>
+      <option value="1305">9:45 PM</option>
+      <option value="1320">10:00 PM</option>
+      <option value="1335">10:15 PM</option>
+      <option value="1350">10:30 PM</option>
+      <option value="1365">10:45 PM</option>
+      <option value="1380">11:00 PM</option>
+      <option value="1395">11:15 PM</option>
+      <option value="1410">11:30 PM</option>
+      <option value="1425">11:45 PM</option>
+    </select>
+  </div>
+
+  <div class="form-row">
+    <button id="saveBtn" style="flex: 1; background: #2e7d32;">💾 Save</button>
+    <button id="loadBtn" style="flex: 1;">📂 Load</button>
+    <button id="clearBtn" style="flex: 1;">✕ Clear</button>
+  </div>
+
+  <button id="predictBtn" disabled>Loading data...</button>
+
+  <div class="loading" id="loading">
+    <span class="spinner"></span> Calculating cancellation risk...
+  </div>
+
+  <div class="result" id="result">
+    <div class="status-text" id="statusText"></div>
+    <div class="percentage" id="percentage"></div>
+    <div class="detail-bar" id="detailBar"></div>
+  </div>
+</div>
+
+<script>
+const airports = [];
+const airlines = [];
+let airportsLoaded = false;
+let airlinesLoaded = false;
+let selectedAirline = null;
+let selectedDepAirport = null;
+let selectedArrAirport = null;
+
+function checkLoads() {
+  if (!airportsLoaded || !airlinesLoaded) return;
+  const btn = document.getElementById('predictBtn');
+  btn.disabled = false;
+  btn.textContent = 'Predict Cancellation Risk';
+  initAutocomplete();
+}
+
+fetch('airlines.json')
+  .then(r => r.json())
+  .then(data => { airlines.push(...data); airlinesLoaded = true; checkLoads(); })
+  .catch(e => { console.error('airlines.json load failed:', e); airlinesLoaded = true; checkLoads(); });
+
+fetch('airports.json')
+  .then(r => r.json())
+  .then(data => {
+    const codeMap = {};
+    data.forEach(item => { codeMap[item.code] = item; });
+    airports.push(...Object.values(codeMap));
+    airportsLoaded = true;
+    checkLoads();
+  })
+  .catch(e => { console.error('airports.json load failed:', e); airportsLoaded = true; checkLoads(); });
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function setupAutocomplete(inputId, listId, data, displayFields, valueFormatter, onSelect) {
+  const input = document.getElementById(inputId);
+  const listEl = document.getElementById(listId);
+  let selectedIndex = -1;
+  let currentFiltered = [];
+  let debounceTimer;
+
+  function getFiltered(query) {
+    if (!query || query.length < 2) return [];
+    const q = query.toLowerCase().trim();
+    return data.filter(item =>
+      displayFields.some(f => (item[f] || '').toLowerCase().includes(q))
+    );
+  }
+
+  function highlightMatch(text, query) {
+    if (!query || query.length < 2) return escapeHtml(text);
+    const q = query.toLowerCase();
+    const i = text.toLowerCase().indexOf(q);
+    if (i >= 0) {
+      return escapeHtml(text.substring(0, i)) +
+        '<strong>' + escapeHtml(text.substring(i, i + query.length)) + '</strong>' +
+        escapeHtml(text.substring(i + query.length));
+    }
+    return escapeHtml(text);
+  }
+
+  function renderList(filtered) {
+    listEl.innerHTML = filtered.map(item => {
+      const code = item.code || '';
+      const codePart = code ? `<span class="ac-code">${escapeHtml(code)}</span>` : '';
+      const details = displayFields.map(f => (item[f] || '')).filter(Boolean).join(', ');
+      const highlighted = highlightMatch(details, input.value);
+      return `<div class="autocomplete-item" data-code="${escapeHtml(item.code)}">
+        ${codePart}
+        <span class="ac-details">${highlighted}</span>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.autocomplete-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const code = el.dataset.code;
+        const item = filtered.find(x => x.code === code);
+        if (!item) return;
+        onSelect(item);
+        input.value = valueFormatter(item);
+        listEl.classList.remove('visible');
+        listEl.innerHTML = '';
+        document.getElementById('predictBtn').disabled = false;
+      });
+      el.addEventListener('mouseenter', () => {
+        listEl.querySelectorAll('.autocomplete-item').forEach(x => x.style.background = '');
+        el.style.background = '#f0f7ff';
+      });
+    });
+  }
+
+  function updateList() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const filtered = getFiltered(input.value);
+      currentFiltered = filtered;
+      if (!filtered.length) {
+        listEl.classList.remove('visible');
+        listEl.innerHTML = '';
+        selectedIndex = -1;
+        return;
+      }
+      renderList(filtered);
+      listEl.classList.add('visible');
+      selectedIndex = -1;
+    }, 80);
+  }
+
+  input.addEventListener('input', updateList);
+
+  input.addEventListener('keydown', (e) => {
+    if (!listEl.classList.contains('visible') || !currentFiltered.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = Math.min(selectedIndex + 1, currentFiltered.length - 1);
+      const items = listEl.querySelectorAll('.autocomplete-item');
+      items.forEach((x, i) => { x.style.background = i === selectedIndex ? '#f0f7ff' : ''; });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+      const items = listEl.querySelectorAll('.autocomplete-item');
+      items.forEach((x, i) => { x.style.background = i === selectedIndex ? '#f0f7ff' : ''; });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0) {
+        const el = listEl.querySelectorAll('.autocomplete-item')[selectedIndex];
+        if (el) {
+          const code = el.dataset.code;
+          const item = currentFiltered.find(x => x.code === code);
+          if (item) {
+            onSelect(item);
+            input.value = valueFormatter(item);
+            listEl.classList.remove('visible');
+            listEl.innerHTML = '';
+            document.getElementById('predictBtn').disabled = false;
+          }
+        }
+      }
+    } else if (e.key === 'Escape') {
+      listEl.classList.remove('visible');
+      listEl.innerHTML = '';
+      selectedIndex = -1;
+    }
+  });
+
+  input.addEventListener('focus', () => {
+    if (input.value.length >= 2 && currentFiltered.length) {
+      renderList(currentFiltered);
+      listEl.classList.add('visible');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest(`#${inputId}`) && !e.target.closest('#' + listId)) {
+      listEl.classList.remove('visible');
+    }
+  });
+}
+
+function initAutocomplete() {
+  setupAutocomplete('airlineInput', 'airlineList', airlines, ['name', 'code'],
+    (item) => item.name, (item) => { selectedAirline = item; });
+
+  setupAutocomplete('depAirportInput', 'depAirportList', airports, ['code', 'city', 'state'],
+    (item) => `${item.code} - ${item.city}, ${item.state}`, (item) => { selectedDepAirport = item; });
+
+  setupAutocomplete('arrAirportInput', 'arrAirportList', airports, ['code', 'city', 'state'],
+    (item) => `${item.code} - ${item.city}, ${item.state}`, (item) => { selectedArrAirport = item; });
+}
+
+function getAirportWeatherSeverity(airport) {
+  if (!airport || !airport.severity) return {};
+  return airport.severity;
+}
+
+// WMO Weather interpretation codes -> our severity system
+function wmoToConditions(code, windSpeed) {
+  const conditions = [];
+  const ws = windSpeed || 0;
+
+  // Code mapping
+  const codeMap = {
+    0: { condition: 'clear', weight: 0 },
+    1: { condition: 'clear', weight: 0.5 },
+    2: { condition: 'cloudy', weight: 2 },
+    3: { condition: 'cloudy', weight: 3 },
+    45: { condition: 'fog', weight: 15 }, 48: { condition: 'fog', weight: 15 },
+    51: { condition: 'rain', weight: 5 }, 53: { condition: 'rain', weight: 8 }, 55: { condition: 'heavy_rain', weight: 12 },
+    56: { condition: 'ice', weight: 18 }, 57: { condition: 'ice', weight: 18 },
+    61: { condition: 'rain', weight: 6 }, 63: { condition: 'heavy_rain', weight: 10 }, 65: { condition: 'heavy_rain', weight: 14 },
+    66: { condition: 'ice', weight: 16 }, 67: { condition: 'ice', weight: 16 },
+    71: { condition: 'snow', weight: 12 }, 73: { condition: 'snow', weight: 16 }, 75: { condition: 'heavy_snow', weight: 20 },
+    77: { condition: 'snow', weight: 10 },
+    80: { condition: 'heavy_rain', weight: 10 }, 81: { condition: 'heavy_rain', weight: 14 }, 82: { condition: 'heavy_rain', weight: 18 },
+    85: { condition: 'snow', weight: 14 }, 86: { condition: 'heavy_snow', weight: 18 },
+    95: { condition: 'thunderstorm', weight: 18 },
+    96: { condition: 'thunderstorm', weight: 20 }, 99: { condition: 'thunderstorm', weight: 20 }
+  };
+
+  const info = codeMap[code];
+  if (info) {
+    conditions.push({ condition: info.condition, score: info.weight });
+  }
+
+  // Wind severity
+  if (ws > 30) conditions.push({ condition: 'wind', score: 20 });
+  else if (ws > 20) conditions.push({ condition: 'wind', score: 14 });
+  else if (ws > 15) conditions.push({ condition: 'wind', score: 10 });
+  else if (ws > 10) conditions.push({ condition: 'wind', score: 6 });
+
+  return conditions;
+}
+
+async function fetchWeatherCode(lat, lon, offsetMinutes = 0) {
+  try {
+    const today = new Date();
+    const futureOffset = new Date(today.getTime() + offsetMinutes * 60000);
+    const params = new URLSearchParams({
+      latitude: lat,
+      longitude: lon,
+      current: 'weather_code,wind_speed_10m,temperature_2m',
+      timezone: 'auto',
+      forecast_days: 3
+    });
+    const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+    const data = await resp.json();
+
+    // Try forecast hourly, fallback to current
+    const forecastHourly = data.hourly && data.hourly.time ? data.hourly : null;
+    if (forecastHourly && offsetMinutes > 0) {
+      const targetMinutes = today.getHours() * 60 + today.getMinutes() + offsetMinutes;
+      const dayOffset = Math.floor(targetMinutes / (24 * 60));
+      const hourOffset = ((targetMinutes % (24 * 60)) / 60) | 0;
+      const searchDate = new Date(today);
+      searchDate.setDate(searchDate.getDate() + dayOffset);
+      const codeIndex = forecastHourly.time.findIndex(t => {
+        const d = new Date(t);
+        return d >= searchDate && d.getHours() === hourOffset && d.getDate() === searchDate.getDate();
+      });
+      if (codeIndex >= 0 && codeIndex < forecastHourly.weather_code.length) {
+        return {
+          code: forecastHourly.weather_code[codeIndex],
+          wind: forecastHourly.wind_speed_10m ? forecastHourly.wind_speed_10m[codeIndex] : 0,
+          temp: forecastHourly.temperature_2m ? forecastHourly.temperature_2m[codeIndex] : null
+        };
+      }
+    }
+
+    // Fallback to current weather
+    const code = data.current && data.current.weather_code;
+    const wind = data.current && data.current.wind_speed_10m;
+    const temp = data.current && data.current.temperature_2m;
+    if (typeof code === 'number') {
+      return { code, wind, temp };
+    }
+  } catch(e) { console.warn('Weather fetch failed:', e.message); }
+  return null;
+}
+
+function evaluateWeatherConditions(code, windSpeed) {
+  const conditions = wmoToConditions(code, windSpeed);
+
+  const severityWeights = {
+    snow: 2.5, heavy_snow: 4.0, ice: 3.5, thunderstorm: 3.0,
+    fog: 1.5, wind: 1.2, heavy_rain: 2.0, rain: 1.0, haze: 0.8
+  };
+
+  let score = 0;
+  const reportedConditions = [];
+
+  conditions.forEach(c => {
+    const weight = severityWeights[c.condition] || 1;
+    score += (c.score / 20) * weight;
+    if (c.score >= 6) {
+      reportedConditions.push({ condition: c.condition, score: c.score });
+    }
+  });
+
+  return { score: score * 20, conditions: reportedConditions };
+}
+
+// Estimate flight hours from airport coordinates (haversine distance)
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function estimateFlightTimeMinutes(distanceKm) {
+  if (distanceKm < 300) return 75;
+  if (distanceKm < 800) return 120;
+  if (distanceKm < 1500) return 180;
+  if (distanceKm < 2500) return 240;
+  return 360;
+}
+
+async function fetchWeatherAtTime(lat, lon, targetMinutesSinceMidnight) {
+  try {
+    const today = new Date();
+    const currentMinutes = today.getHours() * 60 + today.getMinutes();
+    const targetMs = today.getTime() + (targetMinutesSinceMidnight - currentMinutes) * 60000;
+    const targetDate = new Date(targetMs);
+
+    // Build timezone name for accurate parsing
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const params = new URLSearchParams({
+      latitude: lat, longitude: lon,
+      hourly: 'weather_code,wind_speed_10m',
+      timezone: tz, forecast_days: 3
+    });
+    const resp = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+    const data = await resp.json();
+
+    // Find closest forecast hour to target time
+    const times = data.hourly && data.hourly.time ? data.hourly.time : [];
+    if (!times.length) throw new Error('no hourly data');
+
+    let bestIndex = 0;
+    let bestDiff = Infinity;
+    for (let i = 0; i < times.length; i++) {
+      const ft = new Date(times[i]).getTime();
+      const diff = Math.abs(ft - targetMs);
+      if (diff < bestDiff) { bestDiff = diff; bestIndex = 0; }
+      else if (bestDiff < 3*60*60*1000) break; // stop if going past 3h window
+    }
+
+    // Find the closest match
+    for (let i = 0; i < times.length; i++) {
+      const ft = new Date(times[i]).getTime();
+      if (Math.abs(ft - targetMs) < bestDiff) { bestDiff = Math.abs(ft - targetMs); bestIndex = i; }
+      if (ft > targetMs + 2*60*60*1000 && i > bestIndex + 3) break;
+    }
+
+    const idx = bestIndex < (data.hourly && data.hourly.weather_code && data.hourly.weather_code.length ? data.hourly.weather_code.length : times.length) ? bestIndex : 0;
+
+    if (idx >= 0 && idx < times.length) {
+      const code = data.hourly && data.hourly.weather_code ? data.hourly.weather_code[idx] : null;
+      const wind = data.hourly && data.hourly.wind_speed_10m ? data.hourly.wind_speed_10m[idx] : 0;
+      if (typeof code === 'number' && !isNaN(code)) {
+        return { code, wind: wind || 0 };
+      }
+    }
+  } catch(e) { console.warn('Hourly weather fetch failed:', e.message); }
+  return null;
+}
+
+async function fetchWeatherCurrent(lat, lon) {
+  try {
+    const resp = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,wind_speed_10m&timezone=auto`);
+    const data = await resp.json();
+    const code = data.current && data.current.weather_code;
+    const wind = data.current && data.current.wind_speed_10m;
+    if (typeof code === 'number') return { code, wind };
+  } catch(e) { console.warn('Current weather fetch failed:', e.message); }
+  return null;
+}
+
+async function calculateWeatherRisk(depAirport, arrAirport, departureTimeMinutes) {
+  let depCode = null, depWind = 0;
+  let arrCode = null, arrWind = 0;
+  let flightTime = 120; // default 2 hours
+
+  // Get departure weather (current conditions at departure)
+  if (depAirport.latitude && depAirport.longitude) {
+    const depWeather = await fetchWeatherCurrent(depAirport.latitude, depAirport.longitude);
+    if (depWeather) { depCode = depWeather.code; depWind = depWeather.wind; }
+  }
+
+  // Estimate flight time based on distance
+  if (depAirport.latitude && depAirport.longitude && arrAirport.latitude && arrAirport.longitude) {
+    const dist = haversine(depAirport.latitude, depAirport.longitude, arrAirport.latitude, arrAirport.longitude);
+    flightTime = estimateFlightTimeMinutes(dist);
+  }
+
+  // Get arrival weather at estimated arrival time
+  const departureHour = (departureTimeMinutes / 60) | 0;
+  const arrivalTimeMinutes = (departureTimeMinutes + flightTime) % (24 * 60);
+  if (arrAirport.latitude && arrAirport.longitude) {
+    const arrWeather = await fetchWeatherAtTime(arrAirport.latitude, arrAirport.longitude, arrivalTimeMinutes);
+    if (arrWeather) { arrCode = arrWeather.code; arrWind = arrWeather.wind || 0; }
+    else {
+      // Fallback: fetch current
+      const curr = await fetchWeatherCurrent(arrAirport.latitude, arrAirport.longitude);
+      if (curr) { arrCode = curr.code; arrWind = curr.wind; }
+    }
+  }
+
+  if (depCode === null && arrCode === null) {
+    return { score: 2, conditions: [], detailScores: { depScore: 2, arrScore: 2 }, liveData: false, flightTime, arrivalTimeMinutes };
+  }
+
+  // Evaluate both airports
+  let depScore = 0, arrScore = 0;
+  const depConditions = [], arrConditions = [];
+
+  if (depCode !== null) {
+    const depResult = evaluateWeatherConditions(depCode, depWind);
+    depScore = depResult.score / 20;
+    depConditions.push(...depResult.conditions.map(c => ({...c, location: 'departure'})));
+  }
+
+  if (arrCode !== null) {
+    const arrResult = evaluateWeatherConditions(arrCode, arrWind);
+    arrScore = arrResult.score / 20;
+    arrConditions.push(...arrResult.conditions.map(c => ({...c, location: 'arrival'})));
+  }
+
+  // Time multiplier for departure hour
+  if (departureHour >= 0 && departureHour <= 5) depScore *= 1.3;
+  else if (departureHour >= 19 && departureHour <= 23) depScore *= 1.15;
+
+  let weatherScore = (depScore * 0.5 + arrScore * 0.5) * 20;
+
+  // Compound weather multiplier
+  const depConds = depConditions.map(c => c.condition);
+  const arrConds = arrConditions.map(c => c.condition);
+  const allConds = [...depConds, ...arrConds];
+  const hasIce = allConds.includes('ice') || allConds.includes('heavy_snow') || allConds.includes('snow');
+  const hasStorm = allConds.includes('thunderstorm') || allConds.includes('heavy_rain');
+
+  let compoundMult = 1;
+  if (depConditions.some(c => c.condition === 'ice') && arrConditions.some(c => c.condition === 'ice')) compoundMult = 1.4;
+  else if (allConds.filter(c => c === 'snow' || c === 'heavy_snow').length >= 2) compoundMult = 1.3;
+  else if (allConds.filter(c => c === 'thunderstorm').length >= 2) compoundMult = 1.25;
+  else if (allConds.filter(c => c === 'fog').length >= 2) compoundMult = 1.2;
+  else if (hasIce && hasStorm) compoundMult = Math.max(compoundMult, 1.3);
+
+  weatherScore *= compoundMult;
+
+  return {
+    score: Math.min(100, weatherScore),
+    conditions: [...depConditions, ...arrConditions],
+    detailScores: { depScore: (depScore * 20).toFixed(1), arrScore: (arrScore * 20).toFixed(1) },
+    liveData: depCode !== null && arrCode !== null,
+    flightTime,
+    arrivalTimeMinutes
+  };
+}
+
+async function predict(airline, depAirport, arrAirport, departureTimeMinutes) {
+  const weatherRisk = await calculateWeatherRisk(depAirport, arrAirport, departureTimeMinutes);
+
+  const airlineRisk = (airline.riskScore || 5) * 1.5;
+
+  const departureHour = (departureTimeMinutes / 60) | 0;
+  let timeRisk = 4;
+  if (departureHour >= 0 && departureHour <= 5) timeRisk = 12;
+  else if (departureHour >= 19 && departureHour <= 23) timeRisk = 8;
+  else if (departureHour >= 11 && departureHour <= 13) timeRisk = 6;
+
+  const majorHubs = new Set(['ATL', 'LAX', 'ORD', 'DFW', 'DEN', 'JFK', 'SFO',
+    'SEA', 'MIA', 'LAS', 'PHX', 'IAH', 'MSP', 'BOS', 'DTW', 'CLT', 'PHL',
+    'LGA', 'EWR', 'DCA', 'IAD', 'BWI', 'MCI', 'STL', 'MEM', 'BNA', 'TPA',
+    'HOU', 'SAN', 'OAK', 'SMF', 'PDX', 'RDU', 'MCO', 'PBI', 'FLL', 'AUS',
+    'SJC', 'OAK', 'BUR', 'LGB', 'SNA', 'PSP', 'SBA', 'MRY', 'SNA', 'LAX',
+    'SAN', 'LAS', 'PHX', 'TUS', 'ALB', 'BUF', 'ROC', 'SYR', 'PIT', 'CLT',
+    'RDU', 'GSP', 'CHS', 'JAX', 'MCO', 'TPA', 'PBI', 'FLL', 'RSW', 'SRQ',
+    'HNL', 'ANC', 'FAI', 'MKE', 'MDW', 'IND', 'CVG', 'SDF', 'CMH', 'CLE',
+    'DLH', 'GRB', 'MSN', 'DSM', 'OMA', 'MCI', 'STL', 'TUL', 'OKC', 'RIC',
+    'BNA', 'TRI', 'GSP', 'CHS', 'SAV', 'JAX', 'RSW', 'SRQ', 'TPA', 'PBI',
+    'FLL', 'ECP', 'HRL', 'MFE', 'ABQ', 'ELP', 'TUS', 'PHX', 'SAN', 'LAZ',
+    'PDX', 'SEA', 'BOI', 'SUN', 'IDA', 'LWS', 'EUG', 'RDM', 'BLI', 'PAE',
+    'GEG', 'YKM', 'PSC', 'SLE', 'MFR', 'RNO', 'SVN', 'HHR', 'OAK', 'SFO',
+    'SJC', 'SMF', 'FAT', 'MOD', 'MMH', 'HWD', 'CCR', 'NUQ', 'SQL', 'O62',
+    'LGV', 'ALW', 'HIO', 'PDX', 'TIK', 'HIO', 'AEM', 'MMV', 'CVO', 'OTH',
+    'OTH', 'MFR', 'EUG', 'RDM', 'PDT', 'BLI', 'PLU', 'S68', '5S4']);
+
+  let routeRisk = 0;
+  if (majorHubs.has(depAirport.code) && majorHubs.has(arrAirport.code)) routeRisk = 10;
+  else routeRisk = 4;
+
+  let distanceFactor = 5;
+  if (depAirport.state !== arrAirport.state) distanceFactor = 8;
+
+  let cancellationPct = 0;
+  cancellationPct += weatherRisk.score * 0.45;
+  cancellationPct += airlineRisk * 0.15;
+  cancellationPct += timeRisk * 1.0;
+  cancellationPct += routeRisk;
+  cancellationPct += distanceFactor;
+  cancellationPct += (Math.random() * 6 - 3);
+  cancellationPct = Math.max(0, Math.min(100, Math.round(cancellationPct)));
+
+  displayResult(cancellationPct, { airline, depAirport, arrAirport, departureTimeMinutes, departureHour, weatherRisk, airlineRisk, timeRisk, routeRisk, distanceFactor });
+}
+
+function minutesToLabel(m) {
+  const hrs = m % 24;
+  const mins = 0;
+  const ampm = hrs >= 12 ? 'PM' : 'AM';
+  const h12 = hrs === 0 ? 12 : (hrs > 12 ? hrs - 12 : hrs);
+  return h12 + ':00 ' + ampm;
+}
+
+function displayResult(pct, data) {
+  const result = document.getElementById('result');
+  const pctEl = document.getElementById('percentage');
+  const statusEl = document.getElementById('statusText');
+  const detailEl = document.getElementById('detailBar');
+  const bg = document.getElementById('background-layer');
+
+  let color, label, bgHex;
+  if (pct <= 30) {
+    color = '#2e7d32'; label = 'LOW Cancellation Risk'; bgHex = '#e8f5e9';
+  } else if (pct < 60) {
+    color = '#f57f17'; label = 'MODERATE Cancellation Risk'; bgHex = '#fff8e1';
+  } else {
+    color = '#c62828'; label = 'HIGH Cancellation Risk'; bgHex = '#ffebee';
+  }
+
+  pctEl.textContent = pct + '%';
+  pctEl.style.color = color;
+  statusEl.textContent = label;
+  statusEl.style.color = color;
+  bg.style.backgroundColor = bgHex;
+
+  const ampm = data.departureHour >= 12 ? 'PM' : 'AM';
+  const h12 = data.departureHour === 0 ? 12 : (data.departureHour > 12 ? data.departureHour - 12 : data.departureHour);
+  const depLab = h12 + ':00 ' + ampm;
+
+  // Calculate estimated arrival
+  const arrivalMin = data.weatherRisk.arrivalTimeMinutes || (data.departureTimeMinutes + data.weatherRisk.flightTime);
+  const arrLab = minutesToLabel(arrivalMin);
+  // Calculate flight time display
+  const ftMins = data.weatherRisk.flightTime;
+  const ftHrs = Math.floor(ftMins / 60);
+  const ftRemMins = ftMins % 60;
+  const ftLabel = ftHrs > 0 ? (ftRemMins > 0 ? ftHrs + 'h ' + ftRemMins + 'm' : ftHrs + ' hours') : ftRemMins + ' min';
+
+  let detailHTML = `
+    <div class="detail-row"><span class="detail-label">Airline</span><span class="detail-value">${data.airline.name}</span></div>
+    <div class="detail-row"><span class="detail-label">Route</span><span class="detail-value">${data.depAirport.code} → ${data.arrAirport.code}</span></div>
+    <div class="detail-row"><span class="detail-label">Departure</span><span class="detail-value">${depLab}</span></div>
+    <div class="detail-row"><span class="detail-label">Departure Airport</span><span class="detail-value">${data.depAirport.city}, ${data.depAirport.state}</span></div>
+    <div class="detail-row"><span class="detail-label">Arrival Airport</span><span class="detail-value">${data.arrAirport.city}, ${data.arrAirport.state}</span></div>
+    <div class="detail-row"><span class="detail-label">Est. Arrival Time</span><span class="detail-value">${arrLab} (+${ftLabel})</span></div>
+    <div class="detail-row"><span class="detail-label">Departure Weather Severity</span><span class="detail-value">${data.weatherRisk.detailScores.depScore}/100</span></div>
+    <div class="detail-row"><span class="detail-label">Arrival Weather Severity (at arrival)</span><span class="detail-value">${data.weatherRisk.detailScores.arrScore}/100</span></div>
+  `;
+
+  if (data.weatherRisk.conditions.length > 0) {
+    detailHTML += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.1);">';
+    detailHTML += '<p style="font-size:0.82rem;color:#555;margin-bottom:6px;font-weight:600;">Significant Weather Conditions:</p>';
+    data.weatherRisk.conditions.forEach(c => {
+      detailHTML += `<div class="detail-row"><span class="detail-label">${c.location === 'departure' ? 'Departure' : 'Arrival'}: ${c.condition.charAt(0).toUpperCase() + c.condition.slice(1)}</span><span class="detail-value">${c.score}/20</span></div>`;
+    });
+    detailHTML += '</div>';
+  }
+
+  detailEl.innerHTML = detailHTML;
+  result.classList.add('visible');
+}
+
+// Click handler for predict button
+document.getElementById('predictBtn').addEventListener('click', async () => {
+  if (!selectedAirline || !selectedDepAirport || !selectedArrAirport) return;
+  const hour = parseInt(document.getElementById('departureTime').value);
+  const loading = document.getElementById('loading');
+  loading.classList.add('visible');
+  loading.textContent = ' \uD83D\uDCCA Fetching live weather from Open-Meteo...';
+  document.getElementById('result').classList.remove('visible');
+  try {
+    await predict(selectedAirline, selectedDepAirport, selectedArrAirport, hour);
+  } catch(e) {
+    console.error(e);
+    document.getElementById('loading').classList.remove('visible');
+  }
+  loading.textContent = '';
+});
+
+// =======================
+// Save / Load / Clear form data
+// =======================
+const STORAGE_KEY = 'flightPredictor_data';
+
+function saveFormToStorage() {
+  const data = {
+    airline: selectedAirline ? selectedAirline.name : null,
+    airlineCode: selectedAirline ? selectedAirline.code : null,
+    depAirport: selectedDepAirport ? selectedDepAirport.name : null,
+    depCode: selectedDepAirport ? selectedDepAirport.code : null,
+    arrAirport: selectedArrAirport ? selectedArrAirport.name : null,
+    arrCode: selectedArrAirport ? selectedArrAirport.code : null,
+    departureTime: document.getElementById('departureTime').value,
+    savedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    document.getElementById('loadBtn').disabled = false;
+    showNotification('✓ Saved! Data will auto-load on next visit.');
+  } catch (e) {
+    showNotification('✗ Error saving to localStorage: ' + e.message);
+  }
+}
+
+function loadFormFromStorage() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      showNotification('No saved data found.');
+      return false;
+    }
+    const data = JSON.parse(stored);
+
+    // Restore selected objects
+    if (data.airlineCode && airlines.length) {
+      selectedAirline = airlines.find(a => a.code === data.airlineCode) || null;
+      document.getElementById('airlineInput').value = data.airline || '';
+    }
+    if (data.depCode && airports.length) {
+      selectedDepAirport = airports.find(a => a.code === data.depCode) || null;
+      document.getElementById('depAirportInput').value = data.depAirport || '';
+    }
+    if (data.arrCode && airports.length) {
+      selectedArrAirport = airports.find(a => a.code === data.arrCode) || null;
+      document.getElementById('arrAirportInput').value = data.arrAirport || '';
+    }
+    if (data.departureTime) {
+      document.getElementById('departureTime').value = data.departureTime;
+    }
+
+    // Re-enable predict button if all fields are filled
+    if (selectedAirline && selectedDepAirport && selectedArrAirport && data.departureTime) {
+      document.getElementById('predictBtn').disabled = false;
+    }
+
+    const savedDate = new Date(data.savedAt).toLocaleString();
+    showNotification('✓ Loaded! (saved ' + savedDate + ')');
+    return true;
+  } catch (e) {
+    showNotification('✗ Error loading saved data: ' + e.message);
+    return false;
+  }
+}
+
+function clearFormAndStorage() {
+  if (localStorage.getItem(STORAGE_KEY)) {
+    localStorage.removeItem(STORAGE_KEY);
+    document.getElementById('loadBtn').disabled = true;
+  }
+  // Clear all form fields
+  document.getElementById('airlineInput').value = '';
+  document.getElementById('depAirportInput').value = '';
+  document.getElementById('arrAirportInput').value = '';
+  document.getElementById('departureTime').value = '';
+  selectedAirline = null;
+  selectedDepAirport = null;
+  selectedArrAirport = null;
+  document.getElementById('predictBtn').disabled = true;
+  document.getElementById('result').classList.remove('visible');
+  showNotification('✓ Cleared all form data and saved data.');
+}
+
+// Simple notification
+function showNotification(msg) {
+  const loading = document.getElementById('loading');
+  const spinner = loading.querySelector('.spinner');
+  loading.textContent = msg;
+  loading.classList.add('visible');
+  loading.style.color = '#2e7d32';
+  loading.style.fontWeight = '600';
+  setTimeout(() => {
+    loading.classList.remove('visible');
+    loading.style.color = '';
+    loading.style.fontWeight = '';
+  }, 3000);
+}
+
+// Button handlers
+document.getElementById('saveBtn').addEventListener('click', saveFormToStorage);
+document.getElementById('loadBtn').addEventListener('click', loadFormFromStorage);
+document.getElementById('clearBtn').addEventListener('click', clearFormAndStorage);
+
+// Auto-load on page load
+window.addEventListener('DOMContentLoaded', () => {
+  if (localStorage.getItem(STORAGE_KEY)) {
+    loadFormFromStorage();
+  }
+});
+</script>
+</body>
+</html>
